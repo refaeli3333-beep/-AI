@@ -1,0 +1,33 @@
+{
+  "name": "market-radar-ai",
+  "version": "0.2.0",
+  "private": true,
+  "description": "MARKET RADAR AI — financial intelligence & $200 simulation (SIMULATION ONLY)",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "verify": "node scripts/verify.mjs",
+    "verify:integration": "node scripts/verify-integration.mjs",
+    "verify:impact": "node scripts/verify-impact.mjs",
+    "verify:command": "node scripts/verify-command.mjs",
+    "e2e": "node scripts/e2e-scan.mjs",
+    "live:check": "node scripts/live-check.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "next": "14.2.5",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "recharts": "^2.12.7"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/react": "^18.3.3",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}
