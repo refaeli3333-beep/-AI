@@ -1,4 +1,1 @@
-{
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "comment": "Cron temporarily removed — Vercel Hobby allows only 1 run/day, not the */30 schedule this app wants. The /api/cron/scan endpoint is kept and can still be triggered manually or by an external scheduler. Scanning also works on-demand via the 'Scan' button (POST /api/scan-command). To restore automatic scanning on a Pro plan, add back: \"crons\": [{ \"path\": \"/api/cron/scan\", \"schedule\": \"*/30 * * * *\" }]"
-}
+{"$schema":"https://openapi.vercel.sh/vercel.json"}
