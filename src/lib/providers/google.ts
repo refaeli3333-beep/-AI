@@ -1,5 +1,6 @@
 import { WebSearchProvider, SearchOptions, SearchResult, ProviderHealth, QuotaStatus, domainOf } from "./types";
 import { QuotaTracker } from "../search/quota";
+import { ProviderStats, fetchWithTimeout } from "./stats";
 
 /**
  * GoogleProgrammableSearchProvider
@@ -9,9 +10,13 @@ import { QuotaTracker } from "../search/quota";
  */
 export class GoogleProgrammableSearchProvider implements WebSearchProvider {
   readonly key = "GoogleProgrammableSearchProvider";
+  readonly requiredEnv = ["GOOGLE_SEARCH_API_KEY", "GOOGLE_SEARCH_ENGINE_ID"];
+  private stats = new ProviderStats();
   private apiKey = process.env.GOOGLE_SEARCH_API_KEY || "";
   private engineId = process.env.GOOGLE_SEARCH_ENGINE_ID || "";
   private quota = new QuotaTracker("google", Number(process.env.GOOGLE_DAILY_QUOTA || 100));
+
+  getStats() { return this.stats.snapshot(); }
 
   private missingKeys(): string[] {
     const m: string[] = [];
@@ -24,16 +29,22 @@ export class GoogleProgrammableSearchProvider implements WebSearchProvider {
     const missing = this.missingKeys();
     if (missing.length) {
       return { key: this.key, connected: false, missingEnvKeys: missing, lastCheckedAt: null,
-        message: "חסרים מפתחות — הספק במצב Not Connected" };
+        message: "NOT_AVAILABLE — חסרים מפתחות" };
     }
-    // A single real test query decides connectivity.
+    // A single real test query decides connectivity. A key that EXISTS but is rejected
+    // is not LIVE: 403 usually means the Custom Search JSON API is not enabled on the
+    // Google Cloud project, 429 means the daily quota is spent.
     try {
       const res = await this.rawFetch("test", { maxResults: 1 });
-      return { key: this.key, connected: res.ok, missingEnvKeys: [], lastCheckedAt: new Date().toISOString(),
-        message: res.ok ? "Connected" : `בדיקה נכשלה (HTTP ${res.status})` };
+      if (res.ok) { this.stats.success(); return { key: this.key, connected: true, missingEnvKeys: [], lastCheckedAt: new Date().toISOString(), message: "Connected" }; }
+      const detail = res.status === 403 ? "Custom Search JSON API אינו מופעל בפרויקט Google Cloud"
+        : res.status === 429 ? "מכסת Google היומית מוצתה" : `HTTP ${res.status}`;
+      this.stats.failure(detail, res.status === 429);
+      return { key: this.key, connected: false, missingEnvKeys: [], lastCheckedAt: new Date().toISOString(), message: `OFFLINE — ${detail}` };
     } catch (e: any) {
+      this.stats.failure(String(e?.message || e));
       return { key: this.key, connected: false, missingEnvKeys: [], lastCheckedAt: new Date().toISOString(),
-        message: `שגיאה: ${e?.message || "unknown"}` };
+        message: `OFFLINE — ${e?.message || "network error"}` };
     }
   }
 
@@ -50,16 +61,19 @@ export class GoogleProgrammableSearchProvider implements WebSearchProvider {
   }
 
   private async rawFetch(query: string, options?: SearchOptions): Promise<Response> {
-    return fetch(this.buildUrl(query, options));
+    return fetchWithTimeout(this.buildUrl(query, options));
   }
 
   async search(query: string, options?: SearchOptions): Promise<SearchResult[]> {
     if (this.missingKeys().length) return [];        // never crash: behave as empty
     if ((await this.quota.status()).exhausted) return []; // quota gate
 
-    const res = await this.rawFetch(query, options);
+    let res: Response;
+    try { res = await this.rawFetch(query, options); }
+    catch (e: any) { this.stats.failure(String(e?.message || e)); return []; }
     await this.quota.increment(1, res.status === 429);
-    if (!res.ok) return [];
+    if (!res.ok) { this.stats.failure(`HTTP ${res.status}`, res.status === 429); return []; }
+    this.stats.success();
 
     const data: any = await res.json();
     const items: any[] = data.items || [];

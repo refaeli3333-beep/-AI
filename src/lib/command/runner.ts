@@ -5,16 +5,14 @@
 // NOT_AVAILABLE. Nothing is invented; missing providers are reported, not faked.
 import { ScanCommand, SCAN_STAGES } from "./nlCommand";
 import { AggregatedSearchService } from "../providers/aggregated";
-import { GoogleProgrammableSearchProvider } from "../providers/google";
 import { MockSearchProvider } from "../providers/mock";
-import { GdeltProvider } from "../providers/gdelt";
-import { RssProvider } from "../providers/rss";
-import { OfficialProvider } from "../providers/official";
+import { connectedSearchProviders } from "../providers/registry";
 import { dedupe } from "../search/dedupe";
 import { getMode } from "../mode";
 import { createSignalIfMeaningful, SignalStore, SignalCreationResult } from "../pipeline/createSignal";
 import { getMarketProvider } from "../market";
 import { SearchResult } from "../providers/types";
+import { aiConfigured } from "../ai/client";
 
 export type SourceTag = "LIVE" | "MOCK" | "NOT_AVAILABLE";
 
@@ -97,25 +95,30 @@ async function execute(run: ScanRun, deps: RunnerDeps) {
 
   const hasX = !!process.env.X_API_BEARER_TOKEN;
 
+  // Every provider in the registry that PASSES A REAL HEALTH CHECK right now. This is the
+  // only thing that decides LIVE — a configured key that the vendor rejects counts as offline.
+  const liveProviders = mode === "DEMO" ? [] : await connectedSearchProviders();
+  const newsConnected = liveProviders.length > 0;
+
   const providers = mode === "DEMO"
     ? [new MockSearchProvider()]
     : mode === "LIVE"
-      ? [new GoogleProgrammableSearchProvider(), new GdeltProvider(), new RssProvider(), new OfficialProvider()] // NO Mock in LIVE
-      : [new GoogleProgrammableSearchProvider(), new GdeltProvider(), new RssProvider(), new OfficialProvider(), new MockSearchProvider()];
+      ? liveProviders                                        // NO Mock in LIVE, ever
+      // HYBRID: real providers first; Mock is added only when nothing real answered,
+      // and every result it produces stays tagged MOCK.
+      : (newsConnected ? liveProviders : [...liveProviders, new MockSearchProvider()]);
   run.providersUsed = providers.map((p) => p.key);
 
-  // A source is LIVE only after a REAL successful connection check — never on key presence.
-  let googleConnected = false, marketConnected = false;
+  let marketConnected = false;
   if (mode !== "DEMO") {
-    try { googleConnected = (await new GoogleProgrammableSearchProvider().healthCheck()).connected; } catch { googleConnected = false; }
     try { marketConnected = (await getMarketProvider().provider.healthCheck()).connected; } catch { marketConnected = false; }
   }
 
-  // LIVE MUST NOT use Mock/Demo. If required providers aren't connected, STOP and report
-  // the missing keys instead of fabricating any data (requirements 8 & 9).
-  if (mode === "LIVE" && (!googleConnected || !marketConnected)) {
+  // LIVE MUST NOT use Mock/Demo. If nothing real is connected, STOP and report the reason
+  // instead of fabricating any data.
+  if (mode === "LIVE" && (!newsConnected || !marketConnected)) {
     run.blocked = true;
-    run.blockedReason = "מצב LIVE דורש חיבור אמיתי של Google Search ו-Market Data. חסרים מפתחות/חיבור — הסריקה נעצרה ולא הוצגו נתונים מדומים.";
+    run.blockedReason = "מצב LIVE דורש ספק חדשות מחובר ונתוני שוק מחוברים. אף ספק לא עבר בדיקת חיבור אמיתית — הסריקה נעצרה ולא הוצגו נתונים מדומים.";
     run.providerNotes.push(run.blockedReason);
     run.status = "completed"; run.progress = 100; run.completedAt = new Date().toISOString();
     deps.emit?.(run); if (deps.onComplete) await deps.onComplete(run);
@@ -124,13 +127,16 @@ async function execute(run: ScanRun, deps: RunnerDeps) {
 
   if (c.sourceTypes.includes("x_posts") && !hasX)
     run.providerNotes.push("X API אינו מחובר (X_API_BEARER_TOKEN חסר) — ציוצים אינם זמינים לאימות ישיר; נעשה שימוש במקורות משניים / Mock.");
-  if (!googleConnected && mode === "HYBRID") run.providerNotes.push("Google Search לא עבר בדיקת חיבור — נעשה שימוש ב-Mock (מסומן) עד לחיבור אמיתי.");
+  if (!newsConnected && mode === "HYBRID") run.providerNotes.push("אף ספק חדשות לא עבר בדיקת חיבור — נעשה שימוש ב-Mock (מסומן) עד לחיבור אמיתי.");
+  else if (mode !== "DEMO") run.providerNotes.push(`ספקים מחוברים בפועל: ${liveProviders.map((p) => p.key).join(", ")}`);
   const search = new AggregatedSearchService(providers);
 
   // LIVE only on a successful request; otherwise MOCK (fallback, marked) or NOT_AVAILABLE (no fallback).
-  const newsTag: SourceTag = googleConnected ? "LIVE" : "MOCK";
+  const newsTag: SourceTag = newsConnected ? "LIVE" : "MOCK";
   const priceTag: SourceTag = marketConnected ? "LIVE" : "MOCK";
-  const analysisTag: SourceTag = process.env.AI_API_KEY ? "LIVE" : "MOCK"; // pipeline sets per-result .live on real success
+  // Without a reachable AI layer the pipeline falls back to the deterministic keyword
+  // analysis — that is real code, not invented output, so it is labelled MOCK not LIVE.
+  const analysisTag: SourceTag = aiConfigured() ? "LIVE" : "MOCK";
   const xTag: SourceTag = hasX ? "LIVE" : "NOT_AVAILABLE";
 
   setStage(run, 1, deps); // search

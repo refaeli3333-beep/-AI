@@ -4,6 +4,21 @@ export interface AgentConclusion {
   agentId: string; stance: Stance; confidence: number;   // 0..100
   evidenceQuality: number;                                // 0..100
   argument: string;
+  // --- optional, filled by the real AI layer; consensus math ignores them ---
+  /** false when the model could not be reached — the agent then carries no opinion. */
+  available?: boolean;
+  /** Reason the agent is unavailable (billing, network, refusal). Surfaced, never hidden. */
+  unavailableReason?: string;
+  /** Source URLs this agent actually relied on. */
+  citedUrls?: string[];
+  /** A question this agent could not answer from the evidence — may trigger a temporary specialist. */
+  openQuestion?: string | null;
+  /** Claims this agent believes are contradicted by the evidence. */
+  contradicts?: string[];
+  /** Which debate round produced this conclusion. */
+  round?: string;
+  /** true for a temporary specialist spawned by the governor. */
+  temporary?: boolean;
 }
 export interface ConsensusResult {
   consensusScore: number;   // 0..100 — weighted agreement
@@ -12,12 +27,18 @@ export interface ConsensusResult {
   agreement: { agree: number; disagree: number; uncertain: number };
   majorityStance: Stance;
   dissent: { agentId: string; argument: string }[];      // never hidden
+  /** Agents that could not run (AI offline). They hold no opinion and are excluded from the vote. */
+  unavailable: { agentId: string; reason: string }[];
 }
 
 const clamp = (n: number) => Math.max(0, Math.min(100, n));
 const mean = (a: number[]) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
 
-export function runConsensus(conclusions: AgentConclusion[]): ConsensusResult {
+export function runConsensus(all: AgentConclusion[]): ConsensusResult {
+  // An agent that could not run has no opinion: counting it as "uncertain" would let an
+  // outage quietly move the consensus. Excluded from the vote, reported explicitly.
+  const unavailable = all.filter((c) => c.available === false);
+  const conclusions = all.filter((c) => c.available !== false);
   const agree = conclusions.filter((c) => c.stance === "agree");
   const disagree = conclusions.filter((c) => c.stance === "disagree");
   const uncertain = conclusions.filter((c) => c.stance === "uncertain");
@@ -38,5 +59,6 @@ export function runConsensus(conclusions: AgentConclusion[]): ConsensusResult {
     agreement: { agree: agree.length, disagree: disagree.length, uncertain: uncertain.length },
     majorityStance,
     dissent: disagree.map((c) => ({ agentId: c.agentId, argument: c.argument })),  // surfaced, never hidden
+    unavailable: unavailable.map((c) => ({ agentId: c.agentId, reason: c.unavailableReason || "AI לא זמין" })),
   };
 }

@@ -12,6 +12,8 @@ export class AgentGovernor {
   private tokensUsed = 0;
   constructor(private limits: GovernorLimits = DEFAULT_LIMITS) {}
 
+  /** Read-only view of the caps, so callers can honour concurrency without mutating them. */
+  get caps(): GovernorLimits { return { ...this.limits }; }
   get activeCount() { return [...this.active.values()].filter((a) => !a.done).length; }
   get totalSpawned() { return this.spawnedThisInvestigation; }
   get tokens() { return this.tokensUsed; }

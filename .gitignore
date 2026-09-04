@@ -1,10 +1,14 @@
 node_modules/
-.env.local
 .next/
 .vercel/
-.env.*.local
 *.log
+tsconfig.tsbuildinfo
+
+# Secrets: every env file is ignored...
 .env
+.env.*
 env.local
-.vercel
-.env*
+env.example
+
+# ...except the placeholder template, which must never contain a real key.
+!.env.example

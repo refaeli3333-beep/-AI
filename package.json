@@ -14,10 +14,14 @@
     "verify:integration": "node scripts/verify-integration.mjs",
     "verify:impact": "node scripts/verify-impact.mjs",
     "verify:command": "node scripts/verify-command.mjs",
+    "verify:agents": "node scripts/verify-agents.mjs",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test && npm run verify && npm run verify:integration && npm run verify:impact && npm run verify:command && npm run verify:agents",
     "e2e": "node scripts/e2e-scan.mjs",
     "live:check": "node scripts/live-check.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.123.0",
     "@supabase/supabase-js": "^2.45.0",
     "next": "14.2.5",
     "react": "18.3.1",

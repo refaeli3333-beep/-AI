@@ -1,5 +1,6 @@
 import { MarketDataProvider, Candle, PriceAt, Milestone, MarketHealth, usMarketSession } from "./types";
 import { buildMilestones } from "./mock";
+import { ProviderStats } from "../providers/stats";
 
 /**
  * PolygonMarketDataProvider — real adapter over Polygon.io (US stocks, intraday,
@@ -9,18 +10,26 @@ import { buildMilestones } from "./mock";
  */
 export class PolygonMarketDataProvider implements MarketDataProvider {
   readonly key = "PolygonMarketDataProvider";
+  readonly requiredEnv = ["MARKET_DATA_API_KEY"];
+  private stats = new ProviderStats();
   private apiKey = process.env.MARKET_DATA_API_KEY || "";
   private base = "https://api.polygon.io";
 
   private missing(): string[] { return this.apiKey ? [] : ["MARKET_DATA_API_KEY"]; }
+  getStats() { return this.stats.snapshot(); }
   getMarketSession(tsUtc: string) { return usMarketSession(tsUtc); }
 
   async healthCheck(): Promise<MarketHealth> {
-    if (this.missing().length) return { key: this.key, connected: false, missingEnvKeys: this.missing(), message: "חסר מפתח — Not Connected" };
+    if (this.missing().length) return { key: this.key, connected: false, missingEnvKeys: this.missing(), message: "NOT_AVAILABLE — חסר MARKET_DATA_API_KEY" };
     try {
       const r = await fetch(`${this.base}/v2/aggs/ticker/AAPL/prev?adjusted=true&apiKey=${this.apiKey}`);
-      return { key: this.key, connected: r.ok, missingEnvKeys: [], message: r.ok ? "Connected" : `HTTP ${r.status}` };
-    } catch (e: any) { return { key: this.key, connected: false, missingEnvKeys: [], message: `שגיאה: ${e?.message || "unknown"}` }; }
+      if (r.ok) { this.stats.success(); return { key: this.key, connected: true, missingEnvKeys: [], message: "Connected" }; }
+      this.stats.failure(`HTTP ${r.status}`, r.status === 429);
+      return { key: this.key, connected: false, missingEnvKeys: [], message: `OFFLINE — HTTP ${r.status}` };
+    } catch (e: any) {
+      this.stats.failure(String(e?.message || e));
+      return { key: this.key, connected: false, missingEnvKeys: [], message: `OFFLINE — ${e?.message || "network error"}` };
+    }
   }
 
   async getLatestPrice(symbol: string): Promise<PriceAt | null> {
