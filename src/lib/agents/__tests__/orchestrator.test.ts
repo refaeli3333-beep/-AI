@@ -89,6 +89,9 @@ describe("runInvestigation", () => {
     // No opinion was manufactured to fill the gap.
     expect(r.consensus.agreement).toEqual({ agree: 0, disagree: 0, uncertain: 0 });
     expect(r.temporaryAgents).toHaveLength(0);
+    // Evidence was collected but never analysed, so it earns no confidence at all.
+    expect(r.confidence.score).toBe(0);
+    expect(r.confidence.caps.join(" ")).toContain("לא בוצעה חקירה");
   });
 
   it("records contradictions found by agents", async () => {

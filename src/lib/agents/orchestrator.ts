@@ -179,7 +179,7 @@ export async function runInvestigation(
       claimA: claim, claimB: `עמדת הרוב: ${majority}`, note: `${c.agentId} מצא סתירה בראיות`,
     })));
 
-  const confidence = computeConfidence({
+  const evidenceConfidence = computeConfidence({
     independentSources: countIndependentSources(evidenceUrls),
     sourceQuality,
     providerReliability: await providerReliabilityScore(providerKeys),
@@ -190,6 +190,17 @@ export async function runInvestigation(
       tempConclusions.filter((c) => c.stance === "uncertain").length,
     historicalAccuracy: await historicalAccuracy(),
   });
+
+  // Evidence alone is not a conclusion. If no agent could actually run, nothing was
+  // investigated, challenged or verified — so confidence is 0, not the score the raw
+  // evidence would have earned. Reporting 55 for an investigation that never happened
+  // would be exactly the kind of unearned number this system must not produce.
+  const confidence: ConfidenceBreakdown = aiAvailable ? evidenceConfidence : {
+    score: 0,
+    components: evidenceConfidence.components,
+    caps: [`לא בוצעה חקירה — שכבת ה-AI אינה זמינה (${aiUnavailableReason}); הביטחון 0`],
+    notes: [...evidenceConfidence.notes, "הראיות נאספו אך לא נותחו, לא אותגרו ולא אומתו על ידי אף סוכן."],
+  };
 
   const bullArguments = conclusions.filter((c) => c.available !== false && (c.agentId === "bull" || c.stance === "agree")).map((c) => c.argument).filter(Boolean);
   const bearArguments = conclusions.filter((c) => c.available !== false && (c.agentId === "bear" || c.stance === "disagree")).map((c) => c.argument).filter(Boolean);
