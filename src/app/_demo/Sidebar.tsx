@@ -18,6 +18,9 @@ const LINKS: [string, string, string][] = [
   ["/scans", "סריקות אחרונות", "🛰️"],
   ["/connections", "חיבורים ומקורות", "🔌"],
   ["/settings", "הגדרות", "⚙️"],
+  ["/graph", "גרף קשרים", "🕸️"],
+  ["/radar-brain", "Radar Brain", "🧠"],
+  ["/performance", "ביצועים וכיול", "📊"],
   ["/about", "אודות והבהרת סיכונים", "ℹ️"],
 ];
 
