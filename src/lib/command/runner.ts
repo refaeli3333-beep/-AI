@@ -55,7 +55,7 @@ function missingKeysList(): string[] {
   if (!process.env.MARKET_DATA_API_KEY) m.push("MARKET_DATA_API_KEY");
   if (!process.env.X_API_BEARER_TOKEN) m.push("X_API_BEARER_TOKEN");
   if (!process.env.TRANSLATION_API_KEY) m.push("TRANSLATION_API_KEY");
-  if (!process.env.AI_API_KEY) m.push("AI_API_KEY");
+  if (!aiConfigured()) m.push("AI_API_KEY");   // ANTHROPIC_API_KEY counts too — same resolution as the AI client
   return m;
 }
 

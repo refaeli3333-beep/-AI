@@ -41,10 +41,12 @@ console.log("══════════════════════�
   const r = await probe("Translation", `https://translation.googleapis.com/language/translate/v2?key=${env.TRANSLATION_API_KEY||""}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ q: "test", target: "he" }) });
   results.push({ provider: "Translation", keyPresent, ...r, verdict: r.ok ? "LIVE" : "NOT_AVAILABLE" });
 }
-// AI (Anthropic)
+// AI (Anthropic) — same key resolution and model as src/lib/ai/client.ts
 {
-  const keyPresent = has("AI_API_KEY");
-  const r = await probe("AI Analysis", "https://api.anthropic.com/v1/messages", { method: "POST", headers: { "content-type": "application/json", "x-api-key": env.AI_API_KEY || "", "anthropic-version": "2023-06-01" }, body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: 10, messages: [{ role: "user", content: "test" }] }) });
+  const aiKey = env.AI_API_KEY || env.ANTHROPIC_API_KEY || "";
+  const aiModel = env.AI_MODEL || "claude-opus-5";
+  const keyPresent = !!aiKey;
+  const r = await probe("AI Analysis", "https://api.anthropic.com/v1/messages", { method: "POST", headers: { "content-type": "application/json", "x-api-key": aiKey, "anthropic-version": "2023-06-01" }, body: JSON.stringify({ model: aiModel, max_tokens: 64, messages: [{ role: "user", content: "test" }] }) });
   results.push({ provider: "AI Analysis", keyPresent, ...r, verdict: r.ok ? "LIVE" : "NOT_AVAILABLE" });
 }
 // Supabase
