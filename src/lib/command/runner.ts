@@ -12,7 +12,7 @@ import { getMode } from "../mode";
 import { createSignalIfMeaningful, SignalStore, SignalCreationResult } from "../pipeline/createSignal";
 import { getMarketProvider } from "../market";
 import { SearchResult } from "../providers/types";
-import { aiConfigured } from "../ai/client";
+import { aiConfigured, aiHealthCheck } from "../ai/client";
 
 export type SourceTag = "LIVE" | "MOCK" | "NOT_AVAILABLE";
 
@@ -99,6 +99,9 @@ async function execute(run: ScanRun, deps: RunnerDeps) {
   // only thing that decides LIVE — a configured key that the vendor rejects counts as offline.
   const liveProviders = mode === "DEMO" ? [] : await connectedSearchProviders();
   const newsConnected = liveProviders.length > 0;
+  // X passed the same real health check above, or it did not. A present bearer token that
+  // the vendor rejects (401/402/429) is NOT a connection.
+  const xConnected = liveProviders.some((p) => p.key === "XRecentSearchProvider");
 
   const providers = mode === "DEMO"
     ? [new MockSearchProvider()]
@@ -125,8 +128,10 @@ async function execute(run: ScanRun, deps: RunnerDeps) {
     return;
   }
 
-  if (c.sourceTypes.includes("x_posts") && !hasX)
-    run.providerNotes.push("X API אינו מחובר (X_API_BEARER_TOKEN חסר) — ציוצים אינם זמינים לאימות ישיר; נעשה שימוש במקורות משניים / Mock.");
+  if (c.sourceTypes.includes("x_posts") && !xConnected)
+    run.providerNotes.push(hasX
+      ? "X API מוגדר אך בדיקת החיבור נכשלה (הבקשה נדחתה על ידי X) — ציוצים אינם זמינים לאימות ישיר; נעשה שימוש במקורות משניים / Mock."
+      : "X API אינו מחובר (X_API_BEARER_TOKEN חסר) — ציוצים אינם זמינים לאימות ישיר; נעשה שימוש במקורות משניים / Mock.");
   if (!newsConnected && mode === "HYBRID") run.providerNotes.push("אף ספק חדשות לא עבר בדיקת חיבור — נעשה שימוש ב-Mock (מסומן) עד לחיבור אמיתי.");
   else if (mode !== "DEMO") run.providerNotes.push(`ספקים מחוברים בפועל: ${liveProviders.map((p) => p.key).join(", ")}`);
   const search = new AggregatedSearchService(providers);
@@ -136,8 +141,17 @@ async function execute(run: ScanRun, deps: RunnerDeps) {
   const priceTag: SourceTag = marketConnected ? "LIVE" : "MOCK";
   // Without a reachable AI layer the pipeline falls back to the deterministic keyword
   // analysis — that is real code, not invented output, so it is labelled MOCK not LIVE.
-  const analysisTag: SourceTag = aiConfigured() ? "LIVE" : "MOCK";
-  const xTag: SourceTag = hasX ? "LIVE" : "NOT_AVAILABLE";
+  // A configured AI_API_KEY is NOT proof the model answers: billing, quota and refusals
+  // all leave it unreachable, so probe it once per run exactly as the market provider is
+  // probed above. Tagging analysis LIVE on key presence alone reported the heuristic as
+  // real model output.
+  let aiConnected = false;
+  if (mode !== "DEMO" && aiConfigured()) {
+    try { aiConnected = (await aiHealthCheck()).state === "LIVE"; } catch { aiConnected = false; }
+  }
+  const analysisTag: SourceTag = aiConnected ? "LIVE" : "MOCK";
+  // X has no fallback source, so "not connected" is NOT_AVAILABLE rather than MOCK.
+  const xTag: SourceTag = xConnected ? "LIVE" : "NOT_AVAILABLE";
 
   setStage(run, 1, deps); // search
   const people = await deps.loadPeople(c.peopleQuery);
@@ -179,7 +193,14 @@ async function execute(run: ScanRun, deps: RunnerDeps) {
     run.results.push({
       personName: c.people[0] || r.title, title: r.title, url: r.url, domain: r.domain,
       signalId: created.signalId, score: created.score, dataCompleteness: created.dataCompleteness,
-      tags: { news: created.sources?.news === "LIVE" ? "LIVE" : newsTag, price: priceTag, analysis: analysisTag, x: xTag },
+      // The pipeline already decided per signal whether news, price and analysis were real.
+      // That verdict wins; the run-level tag is only a fallback when it is absent.
+      tags: {
+        news: created.sources?.news ?? newsTag,
+        price: created.sources?.price ?? priceTag,
+        analysis: created.sources?.analysis ?? analysisTag,
+        x: xTag,
+      },
       companies, economicNeed: created.impact?.economicNeed, impact: created.impact,
       milestones: (created as any).milestones, // milestones are persisted via the store; summary optional
     });

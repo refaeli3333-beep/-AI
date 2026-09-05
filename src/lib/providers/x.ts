@@ -33,8 +33,16 @@ export class XRecentSearchProvider implements WebSearchProvider {
       const r = await fetchWithTimeout(`${this.base}?query=markets&max_results=10`, { headers: this.headers() });
       if (r.ok) { this.stats.success(); return { key: this.key, connected: true, missingEnvKeys: [], lastCheckedAt: now, message: "Connected" }; }
       this.stats.failure(`HTTP ${r.status}`, r.status === 429);
-      return { key: this.key, connected: false, missingEnvKeys: [], lastCheckedAt: now,
-        message: r.status === 429 ? "OFFLINE — X rate limit (429)" : `OFFLINE — HTTP ${r.status}` };
+      // A present token is not access. X answers 401 for a bad/expired token and 402/403
+      // when the token is valid but the plan does not include recent search — reporting a
+      // bare status code here made a billing/plan problem look like a missing key.
+      const detail =
+        r.status === 429 ? "מכסת X מוצתה / הגבלת קצב (429)"
+        : r.status === 401 ? "X דחה את הטוקן (401) — X_API_BEARER_TOKEN שגוי או פג תוקף"
+        : r.status === 402 ? "X החזיר 402 — הטוקן תקין אך תוכנית ה-API אינה כוללת חיפוש פוסטים אחרונים (נדרשת תוכנית בתשלום)"
+        : r.status === 403 ? "X החזיר 403 — לאפליקציה אין הרשאה לנקודת הקצה הזו"
+        : `HTTP ${r.status}`;
+      return { key: this.key, connected: false, missingEnvKeys: [], lastCheckedAt: now, message: `OFFLINE — ${detail}` };
     } catch (e: any) {
       this.stats.failure(String(e?.message || e));
       return { key: this.key, connected: false, missingEnvKeys: [], lastCheckedAt: now, message: `OFFLINE — ${e?.message || "network error"}` };

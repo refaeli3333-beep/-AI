@@ -16,9 +16,14 @@ once per day, and the plan permits at most two of them. The schedule above is th
 a design preference; it is the ceiling of the current hosting plan.
 
 Vercel sends the `Authorization: Bearer $CRON_SECRET` header automatically when `CRON_SECRET`
-is set as a project environment variable. **`CRON_SECRET` is currently empty**, which leaves
-`/api/cron/scan` unauthenticated — set it in the Vercel project settings before relying on
-the cron in production.
+is set as a project environment variable. The variable exists in the Vercel project but its
+**value is empty**, which was verified in production: `/api/cron/scan` answered `200` both
+with no `Authorization` header and with a deliberately wrong one.
+
+The endpoint now **fails closed**. With `CRON_SECRET` unset or empty it answers `503`
+(`cron_not_configured`) instead of running, and with a wrong secret it answers `401`. Until a
+real value is set in the Vercel project settings the daily scan will not run — that is
+deliberate: an endpoint that spends provider quota and writes to Supabase must not be open.
 
 ## What this means honestly
 

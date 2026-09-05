@@ -49,9 +49,19 @@ function makeStore(db: ReturnType<typeof getServiceClient>): SignalStore {
 }
 
 export async function GET(req: NextRequest) {
+  // Fail closed. This endpoint spends provider quota and writes to Supabase, so an
+  // unset or empty CRON_SECRET must refuse the request rather than run it for anyone:
+  // `if (secret && ...)` silently skipped the check whenever the variable was empty,
+  // which is how it was reachable unauthenticated in production.
   const secret = process.env.CRON_SECRET;
+  if (!secret) {
+    return NextResponse.json({
+      error: "cron_not_configured",
+      message: "CRON_SECRET אינו מוגדר (או ריק) — נקודת הקצה מסרבת לפעול כדי לא להיות פתוחה לכל דורש. יש להגדיר CRON_SECRET בהגדרות הפרויקט ב-Vercel.",
+    }, { status: 503 });
+  }
   const auth = req.headers.get("authorization") || req.nextUrl.searchParams.get("secret");
-  if (secret && auth !== `Bearer ${secret}` && auth !== secret) {
+  if (auth !== `Bearer ${secret}` && auth !== secret) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
