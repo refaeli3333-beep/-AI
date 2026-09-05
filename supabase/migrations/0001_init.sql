@@ -10,7 +10,7 @@ create table if not exists influential_people (
   display_name text,
   name_in_original_language text,
   aliases text[] default '{}',
-  current_role text,
+  "current_role" text,
   company text,
   organization text,
   country text,
@@ -283,3 +283,4 @@ create table if not exists verification_checks (
 create index if not exists idx_signals_person on signals(person_id);
 create index if not exists idx_results_run on search_results(search_run_id);
 create index if not exists idx_candles_symbol_ts on market_candles(symbol, ts_utc);
+
